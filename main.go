@@ -1,32 +1,15 @@
 package main
 
 import (
-	"bufio"
-	"encoding/xml"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zinrai/libvirtwrap-go/pkg/disk"
+	"github.com/zinrai/libvirtwrap-go/pkg/vm"
+	"github.com/zinrai/libvirtwrap-go/pkg/virsh"
 )
-
-type DomainDisk struct {
-	Device string `xml:"device,attr"`
-	Source struct {
-		File string `xml:"file,attr"`
-	} `xml:"source"`
-	Target struct {
-		Dev string `xml:"dev,attr"`
-	} `xml:"target"`
-}
-
-type Domain struct {
-	Devices struct {
-		Disks []DomainDisk `xml:"disk"`
-	} `xml:"devices"`
-}
 
 var rootCmd = &cobra.Command{
 	Use:   "kvm-vm-tune",
@@ -88,13 +71,14 @@ func runCPUCommand(cmd *cobra.Command, args []string) {
 	}
 	vmName := args[1]
 
+	myVM := vm.New(vmName)
+
 	if dryRun {
-		printCommand("virsh", "setvcpus", vmName, fmt.Sprintf("%d", cpuCount), "--config", "--maximum")
-		printCommand("virsh", "setvcpus", vmName, fmt.Sprintf("%d", cpuCount), "--config")
+		fmt.Printf("Would set CPU count to %d for VM '%s'\n", cpuCount, vmName)
 		return
 	}
 
-	if err := changeCPUCount(vmName, cpuCount); err != nil {
+	if err := myVM.SetCPUCount(cpuCount); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to change CPU count: %v\n", err)
 		os.Exit(1)
 	}
@@ -105,13 +89,14 @@ func runMemoryCommand(cmd *cobra.Command, args []string) {
 	memorySize := args[0]
 	vmName := args[1]
 
+	myVM := vm.New(vmName)
+
 	if dryRun {
-		printCommand("virsh", "setmaxmem", vmName, memorySize, "--config")
-		printCommand("virsh", "setmem", vmName, memorySize, "--config")
+		fmt.Printf("Would set memory size to %s for VM '%s'\n", memorySize, vmName)
 		return
 	}
 
-	if err := changeMemorySize(vmName, memorySize); err != nil {
+	if err := myVM.SetMemorySize(memorySize); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to change memory size: %v\n", err)
 		os.Exit(1)
 	}
@@ -121,8 +106,10 @@ func runMemoryCommand(cmd *cobra.Command, args []string) {
 func runDiskCommand(cmd *cobra.Command, args []string) {
 	vmName := args[0]
 
+	myVM := vm.New(vmName)
+
 	if imagePath == "" {
-		disks, err := getVMDisks(vmName)
+		disks, err := virsh.GetVMDiskPaths(vmName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get disk information for VM '%s': %v\n", vmName, err)
 			os.Exit(1)
@@ -131,12 +118,17 @@ func runDiskCommand(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "No disks found for VM '%s'\n", vmName)
 			os.Exit(1)
 		}
-		imagePath = disks[0].Source.File
+		imagePath = disks[0]
 	}
 
 	fmt.Printf("Selected disk: %s (device: %s)\n", imagePath, device)
 
-	if !isVMStopped(vmName) {
+	isRunning, err := myVM.IsRunning()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check VM status: %v\n", err)
+		os.Exit(1)
+	}
+	if isRunning {
 		fmt.Fprintf(os.Stderr, "VM '%s' is currently running. Please stop the VM before making changes.\n", vmName)
 		os.Exit(1)
 	}
@@ -147,147 +139,23 @@ func runDiskCommand(cmd *cobra.Command, args []string) {
 	}
 
 	if dryRun {
-		printResizeCommand(imagePath, device, partition, size)
+		fmt.Printf("Would resize disk %s to %s for VM '%s'\n", imagePath, size, vmName)
 		return
 	}
 
-	fmt.Println("WARNING: This operation will modify the disk image.")
-	fmt.Print("Do you want to continue? (y/N): ")
-
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.ToLower(strings.TrimSpace(response))
-
-	if response != "y" && response != "yes" {
-		fmt.Println("Operation cancelled.")
-		os.Exit(0)
+	belongsToVM, err := myVM.VerifyDiskBelongsToVM(imagePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to verify disk ownership: %v\n", err)
+		os.Exit(1)
+	}
+	if !belongsToVM {
+		fmt.Fprintf(os.Stderr, "The specified disk does not belong to VM '%s'\n", vmName)
+		os.Exit(1)
 	}
 
-	if err := resizeAndExpandDisk(imagePath, device, partition, size); err != nil {
+	if err := disk.ResizeAndExpandDisk(imagePath, device, partition, size); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to resize and expand disk: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("Disk expansion completed successfully.")
-}
-
-func getVMDisks(vmName string) ([]DomainDisk, error) {
-	cmd := exec.Command("sudo", "virsh", "dumpxml", vmName)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute virsh dumpxml: %v", err)
-	}
-
-	var domain Domain
-	if err := xml.Unmarshal(output, &domain); err != nil {
-		return nil, fmt.Errorf("failed to parse XML: %v", err)
-	}
-
-	if len(domain.Devices.Disks) == 0 {
-		return nil, fmt.Errorf("no disks found for VM '%s'", vmName)
-	}
-
-	return domain.Devices.Disks, nil
-}
-
-func isVMStopped(vmName string) bool {
-	cmd := exec.Command("sudo", "virsh", "list", "--name", "--state-running")
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Printf("Failed to get list of running VMs: %v\n", err)
-		return false
-	}
-
-	runningVMs := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, vm := range runningVMs {
-		if vm == vmName {
-			return false
-		}
-	}
-	return true
-}
-
-func resizeAndExpandDisk(imagePath, device string, partition int, newSize string) error {
-    newImagePath := imagePath + ".new"
-
-    createCmd := exec.Command("sudo", "qemu-img", "create", "-f", "qcow2", "-o", "preallocation=metadata", newImagePath, newSize)
-    fmt.Println("Creating new image...")
-    fmt.Println("Executing command:", createCmd.String())
-    output, err := createCmd.CombinedOutput()
-    if err != nil {
-        return fmt.Errorf("failed to create new image: %v, output: %s", err, string(output))
-    }
-
-    resizeCmd := exec.Command("sudo", "virt-resize", "--expand", fmt.Sprintf("/dev/%s%d", device, partition), imagePath, newImagePath)
-    fmt.Println("Resizing disk...")
-    fmt.Println("Executing command:", resizeCmd.String())
-    output, err = resizeCmd.CombinedOutput()
-    if err != nil {
-        rmCmd := exec.Command("sudo", "rm", newImagePath)
-        rmOutput, rmErr := rmCmd.CombinedOutput()
-        if rmErr != nil {
-            return fmt.Errorf("virt-resize failed: %v, output: %s. Additionally, failed to remove new image: %v, output: %s",
-                err, string(output), rmErr, string(rmOutput))
-        }
-        return fmt.Errorf("virt-resize failed: %v, output: %s. New image was removed.", err, string(output))
-    }
-
-    fmt.Printf("virt-resize output:\n%s\n", string(output))
-
-    mvCmd := exec.Command("sudo", "mv", newImagePath, imagePath)
-    fmt.Println("Replacing original image with resized image...")
-    fmt.Println("Executing command:", mvCmd.String())
-    if err := mvCmd.Run(); err != nil {
-        rmCmd := exec.Command("sudo", "rm", newImagePath)
-        rmOutput, rmErr := rmCmd.CombinedOutput()
-        if rmErr != nil {
-            return fmt.Errorf("failed to replace original image: %v. Additionally, failed to remove new image: %v, output: %s",
-                err, rmErr, string(rmOutput))
-        }
-        return fmt.Errorf("failed to replace original image: %v. New image was removed.", err)
-    }
-
-    fmt.Println("Disk expansion completed.")
-    return nil
-}
-
-func changeCPUCount(vmName string, cpuCount int) error {
-	cmdMax := exec.Command("sudo", "virsh", "setvcpus", vmName, fmt.Sprintf("%d", cpuCount), "--config", "--maximum")
-	if err := cmdMax.Run(); err != nil {
-		return fmt.Errorf("failed to set maximum CPU count: %v", err)
-	}
-
-	cmdCurrent := exec.Command("sudo", "virsh", "setvcpus", vmName, fmt.Sprintf("%d", cpuCount), "--config")
-	if err := cmdCurrent.Run(); err != nil {
-		return fmt.Errorf("failed to set current CPU count: %v", err)
-	}
-
-	return nil
-}
-
-func changeMemorySize(vmName, memorySize string) error {
-	cmd := exec.Command("sudo", "virsh", "setmaxmem", vmName, memorySize, "--config")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to set maximum memory: %v, output: %s", err, string(output))
-	}
-
-	cmd = exec.Command("sudo", "virsh", "setmem", vmName, memorySize, "--config")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to set current memory: %v, output: %s", err, string(output))
-	}
-
-	return nil
-}
-
-func printCommand(name string, args ...string) {
-	fmt.Printf("Command: sudo %s %s\n", name, strings.Join(args, " "))
-}
-
-func printResizeCommand(imagePath, device string, partition int, newSize string) {
-	newImagePath := imagePath + ".new"
-
-	fmt.Printf("Command: sudo qemu-img create -f qcow2 -o preallocation=metadata %s %s\n", newImagePath, newSize)
-	fmt.Printf("Command: sudo virt-resize --expand /dev/%s%d %s %s\n", device, partition, imagePath, newImagePath)
-	fmt.Printf("Command: sudo mv %s %s\n", newImagePath, imagePath)
+	fmt.Printf("Disk expansion completed successfully for VM '%s'.\n", vmName)
 }

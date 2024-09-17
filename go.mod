@@ -2,7 +2,10 @@ module github.com/zinrai/kvm-vm-tune
 
 go 1.22.5
 
-require github.com/spf13/cobra v1.8.1
+require (
+	github.com/spf13/cobra v1.8.1
+	github.com/zinrai/libvirtwrap-go v0.2.0-alpha
+)
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

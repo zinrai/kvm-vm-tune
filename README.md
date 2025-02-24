@@ -7,6 +7,8 @@
 - Change CPU count for a VM
 - Modify memory size of a VM
 - Expand disk size for a VM
+- Create new disk images
+- Attach disks to VMs
 - Dry-run option to preview commands without execution
 
 ## Requirements
@@ -42,7 +44,19 @@ $ kvm-vm-tune memory <memory_size> <vm_name>
 ### Expand disk
 
 ```
-$ kvm-vm-tune disk <vm_name> --size <new_size> [--device <device>] [--partition <partition_number>] [--image <image_path>]
+$ kvm-vm-tune expand-disk <vm_name> --size <new_size> [--device <device>] [--partition <partition_number>] [--image <image_path>]
+```
+
+### Create disk
+
+```
+$ kvm-vm-tune create-disk --path <disk_path> --size <disk_size> [--format <disk_format>]
+```
+
+### Attach disk
+
+```
+$ kvm-vm-tune attach-disk <vm_name> --disk-path <disk_path> --target <target_device> [--cache <cache_mode>] [--driver <driver_type>] [--subdriver <subdriver_type>]
 ```
 
 ### Dry-run
@@ -63,12 +77,22 @@ Add the `--dry-run` flag to any command to preview the commands without executin
 
 3. Expand disk size to 40G for VM named "myvm":
    ```
-   $ kvm-vm-tune disk myvm --size 40G
+   $ kvm-vm-tune expand-disk myvm --size 40G
    ```
 
-4. Dry-run disk expansion:
+4. Create a new 10G disk image in qcow2 format:
    ```
-   $ kvm-vm-tune disk myvm --size 40G --dry-run
+   $ kvm-vm-tune create-disk --path /var/lib/libvirt/images/newdisk.img --size 10G --format qcow2
+   ```
+
+5. Attach the newly created disk to a VM:
+   ```
+   $ kvm-vm-tune attach-disk myvm --disk-path /var/lib/libvirt/images/newdisk.img --target vdb
+   ```
+
+6. Dry-run disk expansion:
+   ```
+   $ kvm-vm-tune expand-disk myvm --size 40G --dry-run
    ```
 
 ## License

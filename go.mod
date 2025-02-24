@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	github.com/spf13/cobra v1.8.1
-	github.com/zinrai/libvirtwrap-go v0.2.0-alpha
+	github.com/zinrai/libvirtwrap-go v0.3.0
 )
 
 require (

@@ -9,6 +9,7 @@
 - Expand disk size for a VM
 - Create new disk images
 - Attach disks to VMs
+- Attach network interfaces to VMs
 - Dry-run option to preview commands without execution
 
 ## Requirements
@@ -59,6 +60,12 @@ $ kvm-vm-tune create-disk --path <disk_path> --size <disk_size> [--format <disk_
 $ kvm-vm-tune attach-disk <vm_name> --disk-path <disk_path> --target <target_device> [--cache <cache_mode>] [--driver <driver_type>] [--subdriver <subdriver_type>]
 ```
 
+### Attach network interface
+
+```
+$ kvm-vm-tune attach-iface <vm_name> --type <interface_type> --source <source_name> [--model <interface_model>]
+```
+
 ### Dry-run
 
 Add the `--dry-run` flag to any command to preview the commands without executing them.
@@ -90,7 +97,12 @@ Add the `--dry-run` flag to any command to preview the commands without executin
    $ kvm-vm-tune attach-disk myvm --disk-path /var/lib/libvirt/images/newdisk.img --target vdb
    ```
 
-6. Dry-run disk expansion:
+6. Attach a bridge network interface to a VM:
+   ```
+   $ kvm-vm-tune attach-iface myvm --type bridge --source br0 --model virtio
+   ```
+
+7. Dry-run disk expansion:
    ```
    $ kvm-vm-tune expand-disk myvm --size 40G --dry-run
    ```

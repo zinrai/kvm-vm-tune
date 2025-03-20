@@ -52,6 +52,13 @@ var createDiskCmd = &cobra.Command{
 	Run:   runCreateDiskCommand,
 }
 
+var attachIfaceCmd = &cobra.Command{
+	Use:   "attach-iface <vm_name>",
+	Short: "Attach a network interface to a VM",
+	Args:  cobra.ExactArgs(1),
+	Run:   runAttachIfaceCommand,
+}
+
 var (
 	// Common flags
 	dryRun bool
@@ -73,10 +80,15 @@ var (
 	createDiskPath string
 	createSize     string
 	createFormat   string
+
+	// Attach interface flags
+	ifaceType   string
+	ifaceSource string
+	ifaceModel  string
 )
 
 func init() {
-	rootCmd.AddCommand(cpuCmd, memoryCmd, expandDiskCmd, attachDiskCmd, createDiskCmd)
+	rootCmd.AddCommand(cpuCmd, memoryCmd, expandDiskCmd, attachDiskCmd, createDiskCmd, attachIfaceCmd)
 
 	// Global flag
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Print the command without executing it")
@@ -103,6 +115,13 @@ func init() {
 	createDiskCmd.Flags().StringVar(&createFormat, "format", "qcow2", "Format of the disk image (e.g., qcow2, raw)")
 	createDiskCmd.MarkFlagRequired("path")
 	createDiskCmd.MarkFlagRequired("size")
+
+	// Attach interface flags
+	attachIfaceCmd.Flags().StringVar(&ifaceType, "type", "", "Interface type (e.g., bridge, network)")
+	attachIfaceCmd.Flags().StringVar(&ifaceSource, "source", "", "Source name (e.g., br0, default)")
+	attachIfaceCmd.Flags().StringVar(&ifaceModel, "model", "virtio", "Interface model (e.g., virtio)")
+	attachIfaceCmd.MarkFlagRequired("type")
+	attachIfaceCmd.MarkFlagRequired("source")
 }
 
 func main() {
@@ -246,4 +265,22 @@ func runCreateDiskCommand(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("Disk image created successfully at %s with size %s\n", createDiskPath, createSize)
+}
+
+func runAttachIfaceCommand(cmd *cobra.Command, args []string) {
+	vmName := args[0]
+	myVM := vm.New(vmName)
+
+	if dryRun {
+		fmt.Printf("Would attach a %s interface to VM '%s' using source '%s' and model '%s'\n",
+			ifaceType, vmName, ifaceSource, ifaceModel)
+		return
+	}
+
+	if err := myVM.AttachInterface(ifaceType, ifaceSource, ifaceModel); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to attach network interface: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Network interface (%s) successfully attached to VM '%s'\n", ifaceType, vmName)
 }

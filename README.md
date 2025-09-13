@@ -109,4 +109,4 @@ Add the `--dry-run` flag to any command to preview the commands without executin
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](https://opensource.org/license/mit) for details.
+This project is licensed under the [MIT License](./LICENSE).

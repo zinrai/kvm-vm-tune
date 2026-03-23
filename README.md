@@ -20,26 +20,18 @@
   - qemu-img
   - virt-resize
 
-## Installation
-
-To install `kvm-vm-tune`, clone the repository and build the tool:
-
-```bash
-$ go build
-```
-
 ## Usage
 
 ### Change CPU count
 
 ```
-$ kvm-vm-tune cpu <cpu_count> <vm_name>
+$ kvm-vm-tune cpu <vm_name> --count <cpu_count>
 ```
 
 ### Change memory size
 
 ```
-$ kvm-vm-tune memory <memory_size> <vm_name>
+$ kvm-vm-tune memory <vm_name> --size <memory_size>
 ```
 
 ### Expand disk
@@ -74,12 +66,12 @@ Add the `--dry-run` flag to any command to preview the commands without executin
 
 1. Change CPU count to 4 for VM named "myvm":
    ```
-   $ kvm-vm-tune cpu 4 myvm
+   $ kvm-vm-tune cpu myvm --count 4
    ```
 
 2. Change memory size to 8G for VM named "myvm":
    ```
-   $ kvm-vm-tune memory 8G myvm
+   $ kvm-vm-tune memory myvm --size 8G
    ```
 
 3. Expand disk size to 40G for VM named "myvm":

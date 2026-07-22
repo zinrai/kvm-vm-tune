@@ -91,6 +91,12 @@ var (
 func init() {
 	rootCmd.AddCommand(cpuCmd, memoryCmd, expandDiskCmd, attachDiskCmd, createDiskCmd, attachIfaceCmd)
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run:   func(cmd *cobra.Command, args []string) { printVersion() },
+	})
+
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Print the command without executing it")
 
 	// CPU flags
